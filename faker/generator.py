@@ -19,6 +19,7 @@ class Generator(object):
         self.__config = dict(
             list(self.__config.items()) + list(config.items()))
         self.__random = random
+        self.context = None
 
     def add_provider(self, provider):
 
@@ -71,8 +72,17 @@ class Generator(object):
         """
         This is a secure way to make a fake from another Provider.
         """
-        # TODO: data export?
-        return self.get_formatter(formatter)(*args, **kwargs)
+        formatter_func = self.get_formatter(formatter)
+        result = formatter_func(*args, **kwargs)
+
+        if self.context is not None:
+            self.context[formatter] = result
+
+            # handle recursive formatters
+            if hasattr(result, 'parts'):
+                self.context.update(result.parts)
+
+        return result
 
     def get_formatter(self, formatter):
         try:
@@ -100,9 +110,25 @@ class Generator(object):
         Replaces tokens (like '{{ tokenName }}' or '{{tokenName}}')
         with the result from the token method call.
         """
-        return _re_token.sub(self.__format_token, text)
+        is_root_call = False
+        if self.context is None:
+            self.context = dict()
+            is_root_call = True
+
+        str_res = _re_token.sub(self.__format_token, text)
+        res = ExtStr(str_res)
+        res.parts = self.context
+
+        if is_root_call:
+            self.context = None
+
+        return res
 
     def __format_token(self, matches):
         formatter = list(matches.groups())
         formatter[1] = self.format(formatter[1])
         return ''.join(formatter)
+
+
+class ExtStr(str):
+    pass
